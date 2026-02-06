@@ -15,6 +15,7 @@
     input:focus, select:focus { outline: none; border-color: #4CAF50; box-shadow: 0 0 5px rgba(76,175,80,0.3); }
     button { cursor: pointer; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px; }
     button:active { transform: scale(0.98) }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
     .btn-primary { background: linear-gradient(135deg, #4CAF50, #45a049); color: white; border: none }
     .btn-danger { background: linear-gradient(135deg, #f44336, #d32f2f); color: white; border: none }
     .btn-warning { background: linear-gradient(135deg, #ff9800, #f57c00); color: white; border: none }
@@ -22,6 +23,8 @@
     .match-row { display: flex; gap: 8px; margin: 8px 0; align-items: center; background: #f5f5f5; padding: 8px; border-radius: 8px; }
     .match-row input { width: 35%; text-align: center; font-weight: bold; }
     .match-row label { width: 30%; text-align: center; font-weight: bold; color: #2a5298; }
+    .match-row.locked { background: #ffebee; opacity: 0.7; }
+    .match-row.locked input { background: #ffcdd2; pointer-events: none; }
     .leaderboard { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 14px; }
     .leaderboard th, .leaderboard td { border: 1px solid #ddd; padding: 10px; text-align: center }
     .leaderboard th { background: linear-gradient(135deg, #4CAF50, #45a049); color: white; position: sticky; top: 0; }
@@ -35,8 +38,14 @@
     @keyframes spin { 0% { transform: rotate(0deg) } 100% { transform: rotate(360deg) } }
     .badge { display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: bold; }
     .badge-admin { background: #ff9800; color: white } .badge-user { background: #4CAF50; color: white }
-    .lazy-load { opacity: 0; transition: opacity 0.3s } .lazy-load.loaded { opacity: 1 }
-    .secure-input { -webkit-text-security: disc; text-security: disc; }
+    .error-msg { color: #f44336; font-size: 14px; margin: 5px 0; display: none; }
+    .success-msg { color: #4CAF50; font-size: 14px; margin: 5px 0; display: none; }
+    .countdown { background: #ffeb3b; color: #333; padding: 10px; border-radius: 8px; text-align: center; font-weight: bold; margin: 10px 0; }
+    .match-info { font-size: 12px; color: #666; margin-top: 4px; }
+    .toast { position: fixed; bottom: 20px; right: 20px; background: #333; color: white; padding: 15px 20px; border-radius: 8px; z-index: 1000; animation: slideIn 0.3s ease; }
+    @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+    .toast.error { background: #f44336; }
+    .toast.success { background: #4CAF50; }
     @media (max-width: 400px) { body { padding: 5px } .box { padding: 10px } h1 { font-size: 1.2rem } }
   </style>
 </head>
@@ -52,8 +61,8 @@
 <div class="box hidden" id="loginPage">
   <h2>🔐 تسجيل الدخول</h2>
   <input id="email" placeholder="البريد الإلكتروني" type="email" autocomplete="off">
-  <input id="password" placeholder="كلمة المرور" type="password" class="secure-input">
-  <button class="btn-primary" onclick="login()">دخول</button>
+  <input id="password" placeholder="كلمة المرور" type="password">
+  <button class="btn-primary" id="loginBtn" onclick="login()">دخول</button>
   <p id="userInfo"></p>
   <span id="adminBadge" class="badge badge-admin hidden">👑 مشرف</span>
 </div>
@@ -66,8 +75,8 @@
 
   <div class="admin-section">
     <h3>⚽ إضافة مباراة</h3>
-    <input id="matchRound" placeholder="رقم الجولة" type="number">
-    <input id="matchName" placeholder="اسم المباراة (مثال: الاتحاد vs الهلال)">
+    <input id="matchRound" placeholder="رقم الجولة (1-38)" type="number" min="1" max="38">
+    <input id="matchName" placeholder="اسم المبارة (مثال: ليفربول vs مانشستر سيتي)">
     <input id="matchTime" type="datetime-local">
     <button class="btn-info" onclick="addMatch()">➕ إضافة</button>
     <div id="matchesList" style="margin-top:10px; max-height:200px; overflow-y:auto"></div>
@@ -75,33 +84,24 @@
 
   <div class="admin-section">
     <h3>📝 إدارة الجولات</h3>
-    <input id="editRoundId" placeholder="معرف الجولة (مثال: round_25)">
-    <input id="editRoundName" placeholder="الاسم الجديد">
-    <div style="display:flex; gap:10px">
-      <button class="btn-warning" onclick="editRound()" style="flex:1">✏️ تعديل</button>
-      <button class="btn-danger" onclick="deleteRound()" style="flex:1">🗑️ حذف</button>
-    </div>
+    <input id="adminRound" placeholder="رقم الجولة" type="number" min="1" max="38">
+    <div id="adminMatchesContainer"></div>
+    <button class="btn-warning" onclick="postResults()" id="postResultsBtn">حفظ النتائج + قفل الجولة</button>
+    <p class="error-msg" id="adminError"></p>
   </div>
 
   <div class="admin-section">
     <h3>👥 إدارة المستخدمين</h3>
-    <input id="userEmail" placeholder="بريد المستخدم">
+    <input id="userEmail" placeholder="بريد المستخدم الجديد">
+    <input id="userPassword" placeholder="كلمة المرور المؤقتية" type="password">
     <select id="userRole">
       <option value="user">مستخدم عادي</option>
       <option value="admin">مشرف</option>
     </select>
     <div style="display:flex; gap:10px">
       <button class="btn-info" onclick="addUser()" style="flex:1">➕ إضافة</button>
-      <button class="btn-danger" onclick="removeUser()" style="flex:1">🗑️ حذف</button>
     </div>
     <div id="usersList" style="margin-top:10px; max-height:150px; overflow-y:auto"></div>
-  </div>
-
-  <div class="admin-section">
-    <h3>🏆 إدخال النتائج</h3>
-    <input id="adminRound" placeholder="رقم الجولة" type="number">
-    <div id="adminMatchesContainer"></div>
-    <button class="btn-warning" onclick="postResults()">حفظ النتائج + قفل الجولة</button>
   </div>
 </div>
 
@@ -114,7 +114,11 @@
     </div>
   </div>
 
-  <input id="roundNumber" placeholder="رقم الجولة" type="number">
+  <div class="countdown hidden" id="countdown">
+    ⏰ الوقت المتبقي لإغلاق التوقعات: <span id="timeLeft">--:--:--</span>
+  </div>
+
+  <input id="roundNumber" placeholder="رقم الجولة (1-38)" type="number" min="1" max="38" onchange="loadRoundMatches()">
 
   <div style="margin:15px 0; padding:10px; background:#e3f2fd; border-radius:8px">
     <label><strong>🎯 المباراة المضاعفة (اختياري):</strong></label>
@@ -123,7 +127,9 @@
   </div>
 
   <div id="matchesContainer"></div>
-  <button class="btn-primary" onclick="submitUserPrediction()">📤 إرسال التوقع</button>
+  <p class="error-msg" id="predictionError"></p>
+  <p class="success-msg" id="predictionSuccess"></p>
+  <button class="btn-primary" onclick="submitUserPrediction()" id="submitBtn">📤 إرسال التوقع</button>
 </div>
 
 <div class="box">
@@ -132,24 +138,10 @@
   <div id="leaderboardContainer" style="max-height:400px; overflow-y:auto"></div>
 </div>
 
-<script>
-  document.addEventListener('contextmenu', e => e.preventDefault());
-  document.addEventListener('keydown', e => {
-    if (e.key === 'F12' || (e.ctrlKey && e.shiftKey && ['I','J','C'].includes(e.key))) e.preventDefault();
-  });
-  window.addEventListener('error', e => {
-    console.error('Unhandled error:', e.error || e.message, e);
-    // Ensure loading spinner hidden on unexpected errors
-    const ld = document.getElementById('loading');
-    if (ld) ld.classList.add('hidden');
-    alert('حدث خطأ غير متوقع. افتح Console للمزيد من التفاصيل.');
-  });
-</script>
-
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-  import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut, setPersistence, browserLocalPersistence } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
-  import { getFirestore, doc, setDoc, getDoc, updateDoc, deleteDoc, collection, addDoc, getDocs, writeBatch, increment, query, orderBy, limit, enableIndexedDbPersistence } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+  import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut, setPersistence, browserLocalPersistence, createUserWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+  import { getFirestore, doc, setDoc, getDoc, updateDoc, deleteDoc, collection, addDoc, getDocs, query, orderBy, limit, serverTimestamp, enableIndexedDbPersistence } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
   const firebaseConfig = {
     apiKey: "AIzaSyAQw9E_LtJ5QQDGpkGV6n9-re3CD7DLvbk",
@@ -165,28 +157,43 @@
   const auth = getAuth(app);
   const db = getFirestore(app);
 
-  // Helper UI
+  // Helper functions
   const show = (id) => document.getElementById(id)?.classList.remove("hidden");
   const hide = (id) => document.getElementById(id)?.classList.add("hidden");
+  const showToast = (msg, type = 'success') => {
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+    toast.textContent = msg;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 3000);
+  };
 
-  // Generate match inputs and doubleMatch options
-  function createMatchInputs(containerId, prefix) {
+  let currentMatches = [];
+  let countdownInterval;
+
+  // Create match inputs dynamically
+  function createMatchInputs(containerId, prefix, isAdmin = false) {
     const container = document.getElementById(containerId);
     if (!container) return;
     container.innerHTML = '';
     for (let i = 1; i <= 10; i++) {
       const div = document.createElement('div');
       div.className = 'match-row';
-      div.innerHTML = `<label>م${i}</label>
-        <input id="${prefix}${i}h" placeholder="0" type="number" min="0" max="20">
-        <input id="${prefix}${i}a" placeholder="0" type="number" min="0" max="20">`;
+      div.id = `${prefix}row${i}`;
+      div.innerHTML = `
+        <label>م${i}</label>
+        <input id="${prefix}${i}h" placeholder="0" type="number" min="0" max="20" inputmode="numeric">
+        <input id="${prefix}${i}a" placeholder="0" type="number" min="0" max="20" inputmode="numeric">
+        <div class="match-info" id="${prefix}info${i}"></div>
+      `;
       container.appendChild(div);
     }
   }
-  createMatchInputs('matchesContainer', 'm');
-  createMatchInputs('adminMatchesContainer', 'a');
 
-  // populate doubleMatch select
+  createMatchInputs('matchesContainer', 'm');
+  createMatchInputs('adminMatchesContainer', 'a', true);
+
+  // Populate double match select
   const doubleSelect = document.getElementById('doubleMatch');
   for (let i = 1; i <= 10; i++) {
     const opt = document.createElement('option');
@@ -195,7 +202,7 @@
     doubleSelect.appendChild(opt);
   }
 
-  // auth ready helper
+  // Auth state ready
   function authStateReady() {
     return new Promise(resolve => {
       const unsub = onAuthStateChanged(auth, user => {
@@ -215,10 +222,9 @@
     }
   }
 
-  // Main init
+  // Initialize app
   async function initApp() {
     try {
-      // enable persistence but don't block app if it fails
       try {
         await setPersistence(auth, browserLocalPersistence);
         await enableIndexedDbPersistence(db);
@@ -235,13 +241,13 @@
         isAdmin = await checkIfAdmin(user.uid);
       }
 
-      // Always hide loading (even on error) to avoid stuck spinner
       hide("loading");
 
       if (isAdmin) {
         show("adminPanel");
         document.getElementById("adminBadge")?.classList.remove("hidden");
-        await loadMatches(); await loadUsers();
+        await loadMatches(); 
+        await loadUsers();
       } else if (user) {
         show("userPanel");
         document.getElementById("adminBadge")?.classList.add("hidden");
@@ -254,171 +260,469 @@
     } catch (err) {
       console.error("initApp error:", err);
       hide("loading");
-      alert("حدث خطأ أثناء تهيئة التطبيق: " + (err.message || err));
+      showToast("حدث خطأ أثناء تهيئة التطبيق", "error");
     }
   }
 
-  // Auth
+  // Auth functions
   window.login = async () => {
+    const btn = document.getElementById('loginBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<div class="spinner" style="width:20px;height:20px;display:inline-block;border-width:2px"></div>';
+    
     try {
-      const emailEl = document.getElementById('email');
-      const passEl = document.getElementById('password');
-      await signInWithEmailAndPassword(auth, emailEl.value, passEl.value);
+      const email = document.getElementById('email').value.trim();
+      const password = document.getElementById('password').value;
+      
+      if (!email || !password) {
+        throw new Error('أدخل البريد وكلمة المرور');
+      }
+      
+      await signInWithEmailAndPassword(auth, email, password);
       await initApp();
+      showToast('تم تسجيل الدخول بنجاح');
     } catch (e) {
       console.error("login error:", e);
-      alert("❌ خطأ في تسجيل الدخول: " + e.message);
+      let msg = 'خطأ في تسجيل الدخول';
+      if (e.code === 'auth/user-not-found') msg = 'المستخدم غير موجود';
+      else if (e.code === 'auth/wrong-password') msg = 'كلمة المرور خاطئة';
+      else if (e.code === 'auth/invalid-email') msg = 'بريد إلكتروني غير صالح';
+      else if (e.message) msg = e.message;
+      
+      showToast(msg, 'error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'دخول';
     }
   };
-  window.logout = async () => { await signOut(auth); location.reload(); };
+
+  window.logout = async () => { 
+    await signOut(auth); 
+    location.reload(); 
+  };
 
   // Admin functions
   window.addMatch = async () => {
     try {
       const round = document.getElementById('matchRound').value;
-      const name = document.getElementById('matchName').value;
+      const name = document.getElementById('matchName').value.trim();
       const time = document.getElementById('matchTime').value;
-      if (!round || !name) return alert('أكمل الحقول');
-      await addDoc(collection(db, "matches"), { round, name, time, created_at: new Date().toISOString() });
-      alert("✅ تم الإضافة");
+      
+      if (!round || !name) return showToast('أكمل الحقول المطلوبة', 'error');
+      if (round < 1 || round > 38) return showToast('رقم الجولة يجب أن يكون بين 1 و 38', 'error');
+      
+      await addDoc(collection(db, "matches"), { 
+        round: parseInt(round), 
+        name, 
+        time, 
+        created_at: serverTimestamp(),
+        status: 'upcoming'
+      });
+      
+      showToast("✅ تم إضافة المباراة");
       await loadMatches();
-    } catch (e) { console.error(e); alert('خطأ: ' + e.message); }
-  };
-
-  window.editRound = async () => {
-    try {
-      const id = document.getElementById('editRoundId').value;
-      const name = document.getElementById('editRoundName').value;
-      if (!id) return alert('أدخل معرف الجولة');
-      await updateDoc(doc(db, "rounds", id), { name });
-      alert("✅ تم التعديل");
-    } catch (e) { console.error(e); alert('خطأ: ' + e.message); }
-  };
-
-  window.deleteRound = async () => {
-    try {
-      const id = document.getElementById('editRoundId').value;
-      if (!id) return alert('أدخل معرف الجولة');
-      if (!confirm('هل أنت متأكد؟')) return;
-      await deleteDoc(doc(db, "rounds", id));
-      alert("🗑️ تم الحذف");
-    } catch (e) { console.error(e); alert('خطأ: ' + e.message); }
+      
+      // Clear inputs
+      document.getElementById('matchName').value = '';
+      document.getElementById('matchTime').value = '';
+    } catch (e) { 
+      console.error(e); 
+      showToast('خطأ: ' + e.message, 'error'); 
+    }
   };
 
   window.addUser = async () => {
     try {
-      const email = document.getElementById('userEmail').value;
+      const email = document.getElementById('userEmail').value.trim();
+      const password = document.getElementById('userPassword').value;
       const role = document.getElementById('userRole').value;
-      if (!email) return alert('أدخل بريد المستخدم');
-      await setDoc(doc(db, "admins", email), { email, role });
-      alert("✅ تم الإضافة");
+      
+      if (!email || !password) return showToast('أدخل البريد وكلمة المرور', 'error');
+      if (password.length < 6) return showToast('كلمة المرور يجب أن تكون 6 أحرف على الأقل', 'error');
+      
+      // Create user in Auth
+      const userCred = await createUserWithEmailAndPassword(auth, email, password);
+      
+      // Add to admins collection for role management
+      await setDoc(doc(db, "admins", userCred.user.uid), { 
+        email, 
+        role,
+        created_at: serverTimestamp()
+      });
+      
+      showToast("✅ تم إضافة المستخدم");
       await loadUsers();
-    } catch (e) { console.error(e); alert('خطأ: ' + e.message); }
-  };
-
-  window.removeUser = async () => {
-    try {
-      const email = document.getElementById('userEmail').value;
-      if (!email) return alert('أدخل بريد المستخدم');
-      await deleteDoc(doc(db, "admins", email));
-      alert("🗑️ تم الحذف");
-      await loadUsers();
-    } catch (e) { console.error(e); alert('خطأ: ' + e.message); }
+      
+      // Clear inputs
+      document.getElementById('userEmail').value = '';
+      document.getElementById('userPassword').value = '';
+    } catch (e) { 
+      console.error(e);
+      let msg = e.message;
+      if (e.code === 'auth/email-already-in-use') msg = 'البريد الإلكتروني مستخدم بالفعل';
+      showToast('خطأ: ' + msg, 'error'); 
+    }
   };
 
   // Loaders
   async function loadMatches() {
     try {
-      const snap = await getDocs(collection(db, "matches"));
+      const q = query(collection(db, "matches"), orderBy("created_at", "desc"), limit(50));
+      const snap = await getDocs(q);
       let html = '';
-      snap.forEach(d => { const o = d.data(); html += `<div style="padding:8px; border-bottom:1px solid #eee">${o.name} - ${o.round}</div>`; });
+      snap.forEach(d => { 
+        const o = d.data(); 
+        const time = o.time ? new Date(o.time).toLocaleString('ar-SA') : 'غير محدد';
+        html += `<div style="padding:8px; border-bottom:1px solid #eee">
+          <strong>${o.name}</strong> - جولة ${o.round}<br>
+          <small style="color:#666">${time}</small>
+        </div>`; 
+      });
       document.getElementById("matchesList").innerHTML = html || 'لا توجد مباريات';
-    } catch (e) { console.error('loadMatches', e); }
+    } catch (e) { 
+      console.error('loadMatches', e); 
+    }
   }
+
   async function loadUsers() {
     try {
       const snap = await getDocs(collection(db, "admins"));
       let html = '';
-      snap.forEach(d => { const o = d.data(); html += `<div style="padding:8px; border-bottom:1px solid #eee">${o.email} - ${o.role}</div>`; });
+      snap.forEach(d => { 
+        const o = d.data(); 
+        const roleBadge = o.role === 'admin' ? '👑 مشرف' : '👤 مستخدم';
+        html += `<div style="padding:8px; border-bottom:1px solid #eee">
+          ${o.email} <span class="badge" style="background:${o.role === 'admin' ? '#ff9800' : '#4CAF50'}; color:white">${roleBadge}</span>
+        </div>`; 
+      });
       document.getElementById("usersList").innerHTML = html || 'لا يوجد مستخدمين';
-    } catch (e) { console.error('loadUsers', e); }
+    } catch (e) { 
+      console.error('loadUsers', e); 
+    }
   }
 
-  // post results
+  // Post results with security
   window.postResults = async () => {
+    const btn = document.getElementById('postResultsBtn');
+    btn.disabled = true;
+    
     try {
       const roundNum = document.getElementById('adminRound').value;
-      if (!roundNum) return alert('أدخل رقم الجولة');
+      if (!roundNum) return showToast('أدخل رقم الجولة', 'error');
+      
       const round = "round_" + roundNum;
-      const actualResult = {};
+      const actualResult = {
+        round: parseInt(roundNum),
+        posted_at: serverTimestamp(),
+        posted_by: auth.currentUser.uid
+      };
+      
+      // Collect results
       for (let i = 1; i <= 10; i++) {
-        actualResult[`match_${i}_home`] = Number(document.getElementById(`a${i}h`).value) || 0;
-        actualResult[`match_${i}_away`] = Number(document.getElementById(`a${i}a`).value) || 0;
+        const home = document.getElementById(`a${i}h`).value;
+        const away = document.getElementById(`a${i}a`).value;
+        
+        if (home === '' || away === '') {
+          return showToast(`أكمل نتيجة مباراة ${i}`, 'error');
+        }
+        
+        actualResult[`match_${i}_home`] = parseInt(home);
+        actualResult[`match_${i}_away`] = parseInt(away);
       }
-      await setDoc(doc(db, "actual_results", round), actualResult, { merge: true });
-      await setDoc(doc(db, "rounds", round), { is_locked: true }, { merge: true });
+      
+      // Save results
+      await setDoc(doc(db, "actual_results", round), actualResult);
+      
+      // Lock round
+      await setDoc(doc(db, "rounds", round), { 
+        is_locked: true, 
+        locked_at: serverTimestamp(),
+        locked_by: auth.currentUser.uid
+      });
+      
+      // Calculate points locally then update (batch)
+      await calculateAndUpdatePoints(round, actualResult);
+      
+      showToast("🏆 تم حفظ النتائج وحساب النقاط!");
+      await loadLeaderboard();
+      
+    } catch (e) { 
+      console.error('postResults', e); 
+      showToast('خطأ: ' + e.message, 'error'); 
+    } finally {
+      btn.disabled = false;
+    }
+  };
 
+  async function calculateAndUpdatePoints(round, actualResult) {
+    try {
       const predsSnap = await getDocs(collection(db, "predictions", round, "users"));
-      const batch = writeBatch(db);
+      
+      // Process in batches of 500 (Firestore limit)
+      let batch = writeBatch(db);
+      let count = 0;
+      const batches = [];
+      
       predsSnap.forEach(p => {
         const d = p.data();
         let pts = 0;
+        
         for (let i = 1; i <= 10; i++) {
-          if (d[`match_${i}_home`] === actualResult[`match_${i}_home`] && d[`match_${i}_away`] === actualResult[`match_${i}_away`]) {
+          const userHome = d[`match_${i}_home`];
+          const userAway = d[`match_${i}_away`];
+          const actualHome = actualResult[`match_${i}_home`];
+          const actualAway = actualResult[`match_${i}_away`];
+          
+          if (userHome === actualHome && userAway === actualAway) {
             pts += 3;
             if (d.double_match === i) pts += 3;
           }
         }
-        batch.update(p.ref, { total_points: pts, updated_at: new Date().toISOString() });
-        batch.set(doc(db, "leaderboard", p.id), { participant_name: d.participant_name || '', total_points: increment(pts), updated_at: new Date().toISOString() }, { merge: true });
+        
+        // Update prediction doc
+        batch.update(p.ref, { 
+          total_points: pts, 
+          calculated_at: serverTimestamp() 
+        });
+        
+        // Update leaderboard
+        const leaderboardRef = doc(db, "leaderboard", p.id);
+        batch.set(leaderboardRef, { 
+          participant_name: d.participant_name || d.email || 'مجهول',
+          total_points: pts,
+          updated_at: serverTimestamp()
+        }, { merge: true });
+        
+        count++;
+        if (count === 500) {
+          batches.push(batch.commit());
+          batch = writeBatch(db);
+          count = 0;
+        }
       });
-      await batch.commit();
-      alert("🏆 تم حساب النقاط!");
-      await loadLeaderboard();
-    } catch (e) { console.error('postResults', e); alert('خطأ في إدخال النتائج: ' + e.message); }
-  };
+      
+      if (count > 0) {
+        batches.push(batch.commit());
+      }
+      
+      await Promise.all(batches);
+      
+    } catch (e) {
+      console.error('calculatePoints error:', e);
+      throw e;
+    }
+  }
 
-  // submit prediction
+  // User prediction with validation
   window.submitUserPrediction = async () => {
+    const btn = document.getElementById('submitBtn');
+    const errorEl = document.getElementById('predictionError');
+    const successEl = document.getElementById('predictionSuccess');
+    
+    btn.disabled = true;
+    errorEl.style.display = 'none';
+    successEl.style.display = 'none';
+    
     try {
       const user = auth.currentUser;
-      if (!user) return alert('سجّل دخول أولًا');
-      // check locked
+      if (!user) return showToast('سجّل دخول أولاً', 'error');
+      
       const roundNum = document.getElementById('roundNumber').value;
-      if (!roundNum) return alert('أدخل رقم الجولة');
-      const round = "round_" + roundNum;
-      const roundSnap = await getDoc(doc(db, "rounds", round));
-      if (roundSnap.exists() && roundSnap.data().is_locked) return alert('❌ الجولة مقفلة!');
-
-      const prediction = { participant_name: user.email || user.uid, total_points: 0, double_match: Number(document.getElementById('doubleMatch').value), timestamp: new Date().toISOString() };
-      for (let i = 1; i <= 10; i++) {
-        prediction[`match_${i}_home`] = Number(document.getElementById(`m${i}h`).value) || 0;
-        prediction[`match_${i}_away`] = Number(document.getElementById(`m${i}a`).value) || 0;
+      if (!roundNum || roundNum < 1 || roundNum > 38) {
+        throw new Error('أدخل رقم جولة صحيح (1-38)');
       }
-      await setDoc(doc(db, "predictions", round, "users", user.uid), prediction, { merge: true });
-      alert("✅ تم الإرسال");
-    } catch (e) { console.error('submitUserPrediction', e); alert('خطأ في الإرسال: ' + e.message); }
+      
+      const round = "round_" + roundNum;
+      
+      // Check if locked
+      const roundSnap = await getDoc(doc(db, "rounds", round));
+      if (roundSnap.exists() && roundSnap.data().is_locked) {
+        throw new Error('❌ الجولة مقفلة! لا يمكن إرسال التوقعات');
+      }
+      
+      // Check deadline from matches
+      const matchesQuery = query(
+        collection(db, "matches"), 
+        where("round", "==", parseInt(roundNum)),
+        orderBy("time"),
+        limit(1)
+      );
+      const matchesSnap = await getDocs(matchesQuery);
+      
+      if (!matchesSnap.empty) {
+        const firstMatch = matchesSnap.docs[0].data();
+        if (firstMatch.time) {
+          const matchTime = new Date(firstMatch.time);
+          const now = new Date();
+          const timeDiff = matchTime - now;
+          
+          if (timeDiff < 0) {
+            throw new Error('❌ انتهى وقت إرسال التوقعات (بدأت أول مباراة)');
+          }
+        }
+      }
+      
+      // Validate all matches filled
+      const prediction = {
+        participant_name: user.email || user.uid,
+        email: user.email,
+        user_id: user.uid,
+        round: parseInt(roundNum),
+        double_match: parseInt(document.getElementById('doubleMatch').value) || 0,
+        timestamp: serverTimestamp(),
+        total_points: 0
+      };
+      
+      for (let i = 1; i <= 10; i++) {
+        const home = document.getElementById(`m${i}h`).value;
+        const away = document.getElementById(`m${i}a`).value;
+        
+        if (home === '' || away === '') {
+          throw new Error(`أكمل توقع مباراة ${i}`);
+        }
+        
+        const homeVal = parseInt(home);
+        const awayVal = parseInt(away);
+        
+        if (homeVal < 0 || homeVal > 20 || awayVal < 0 || awayVal > 20) {
+          throw new Error(`توقع مباراة ${i} يجب أن يكون بين 0 و 20`);
+        }
+        
+        prediction[`match_${i}_home`] = homeVal;
+        prediction[`match_${i}_away`] = awayVal;
+      }
+      
+      // Check if already submitted (update instead of create)
+      const existingPred = await getDoc(doc(db, "predictions", round, "users", user.uid));
+      if (existingPred.exists()) {
+        await updateDoc(doc(db, "predictions", round, "users", user.uid), prediction);
+        showToast("✅ تم تحديث التوقع");
+      } else {
+        await setDoc(doc(db, "predictions", round, "users", user.uid), prediction);
+        showToast("✅ تم إرسال التوقع بنجاح");
+      }
+      
+      successEl.textContent = 'تم الحفظ بنجاح!';
+      successEl.style.display = 'block';
+      
+    } catch (e) { 
+      console.error('submitUserPrediction', e);
+      errorEl.textContent = e.message;
+      errorEl.style.display = 'block';
+      showToast(e.message, 'error');
+    } finally {
+      btn.disabled = false;
+    }
   };
 
-  // leaderboard
+  // Load matches for specific round
+  window.loadRoundMatches = async () => {
+    const roundNum = document.getElementById('roundNumber').value;
+    if (!roundNum) return;
+    
+    try {
+      const q = query(
+        collection(db, "matches"), 
+        where("round", "==", parseInt(roundNum)),
+        orderBy("time")
+      );
+      const snap = await getDocs(q);
+      
+      currentMatches = [];
+      snap.forEach((d, idx) => {
+        if (idx < 10) {
+          currentMatches.push({ id: d.id, ...d.data() });
+        }
+      });
+      
+      // Update UI with match names
+      currentMatches.forEach((match, idx) => {
+        const i = idx + 1;
+        const infoEl = document.getElementById(`minfo${i}`);
+        if (infoEl && match.name) {
+          infoEl.textContent = match.name;
+        }
+        
+        // Update double match select
+        const opt = doubleSelect.options[i];
+        if (opt && match.name) {
+          opt.textContent = `${i} - ${match.name}`;
+        }
+      });
+      
+      // Start countdown if matches found
+      if (currentMatches.length > 0 && currentMatches[0].time) {
+        startCountdown(currentMatches[0].time);
+      }
+      
+    } catch (e) {
+      console.error('loadRoundMatches', e);
+    }
+  };
+
+  function startCountdown(matchTime) {
+    clearInterval(countdownInterval);
+    show('countdown');
+    
+    const updateCountdown = () => {
+      const now = new Date();
+      const match = new Date(matchTime);
+      const diff = match - now;
+      
+      if (diff <= 0) {
+        document.getElementById('timeLeft').textContent = '00:00:00';
+        document.getElementById('submitBtn').disabled = true;
+        document.getElementById('submitBtn').textContent = '⛔ انتهى وقت التوقع';
+        return;
+      }
+      
+      const hours = Math.floor(diff / (1000 * 60 * 60));
+      const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+      const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+      
+      document.getElementById('timeLeft').textContent = 
+        `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+    };
+    
+    updateCountdown();
+    countdownInterval = setInterval(updateCountdown, 1000);
+  }
+
+  // Leaderboard
   async function loadLeaderboard() {
     try {
       const q = query(collection(db, "leaderboard"), orderBy("total_points", "desc"), limit(20));
       const snap = await getDocs(q);
+      
       let html = `<table class="leaderboard"><tr><th>المركز</th><th>اللاعب</th><th>النقاط</th></tr>`;
       let rank = 1;
+      
       snap.forEach(s => {
         const d = s.data();
         const rankClass = rank <= 3 ? `rank-${rank}` : '';
-        html += `<tr class="${rankClass}"><td>${rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : rank}</td><td>${d.participant_name || 'مجهول'}</td><td>${d.total_points || 0}</td></tr>`;
+        const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : rank;
+        html += `<tr class="${rankClass}">
+          <td>${medal}</td>
+          <td>${d.participant_name || 'مجهول'}</td>
+          <td><strong>${d.total_points || 0}</strong></td>
+        </tr>`;
         rank++;
       });
+      
       html += '</table>';
-      document.getElementById("leaderboardContainer").innerHTML = html;
-    } catch (e) { console.error('loadLeaderboard', e); document.getElementById("leaderboardContainer").innerText = 'خطأ في تحميل المتصدرين'; }
+      document.getElementById("leaderboardContainer").innerHTML = html || '<p style="text-align:center">لا توجد بيانات</p>';
+    } catch (e) { 
+      console.error('loadLeaderboard', e); 
+      document.getElementById("leaderboardContainer").innerText = 'خطأ في تحميل المتصدرين';
+    }
   }
 
-  // start
+  // Cleanup on unload
+  window.addEventListener('beforeunload', () => {
+    clearInterval(countdownInterval);
+  });
+
+  // Start
   document.addEventListener("DOMContentLoaded", initApp);
 </script>
 
